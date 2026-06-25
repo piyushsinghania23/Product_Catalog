@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
 app = FastAPI(title="Fast Product Catalog")
@@ -15,7 +15,7 @@ app = FastAPI(title="Fast Product Catalog")
 def get_db_path() -> str:
     if os.getenv("PRODUCTS_DB_PATH"):
         return os.getenv("PRODUCTS_DB_PATH")
-    if os.getenv("VERCEL"):
+    if os.getenv("VERCEL") or os.getenv("RENDER") or os.getenv("RENDER_SERVICE_NAME"):
         return "/tmp/products.db"
     return str(Path(__file__).resolve().parent.parent / "products.db")
 
@@ -105,11 +105,14 @@ class ProductOut(BaseModel):
     updated_at: str
 
 
-@app.get("/")
-def index() -> FileResponse:
+@app.get("/", response_class=HTMLResponse)
+def index() -> HTMLResponse:
     initialize_database()
     ensure_seeded()
-    return FileResponse(Path(__file__).resolve().parent / "static" / "index.html")
+    static_path = Path(__file__).resolve().parent / "static" / "index.html"
+    if static_path.exists():
+        return HTMLResponse(static_path.read_text(encoding="utf-8"))
+    return HTMLResponse("<html><body><h1>Product Catalog</h1><p>Browse products through the API.</p></body></html>")
 
 
 @app.get("/health")
