@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Product Catalog</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 0; padding: 24px; background: #f5f7fb; color: #162033; }
+      .panel { max-width: 900px; margin: 0 auto; background: white; border-radius: 12px; padding: 24px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+      h1 { margin-top: 0; }
+      .controls { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+      select, button { padding: 10px 12px; border-radius: 8px; border: 1px solid #cbd5e1; font-size: 14px; }
+      button { background: #2563eb; color: white; border: none; cursor: pointer; }
+      .card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+      .meta { color: #475569; font-size: 13px; }
+      .pager { margin-top: 16px; display: flex; gap: 8px; }
+      .muted { color: #64748b; }
+    </style>
+  </head>
+  <body>
+    <div class="panel">
+      <h1>Product Catalog</h1>
+      <div class="controls">
+        <select id="categoryFilter">
+          <option value="">All categories</option>
+          <option value="electronics">Electronics</option>
+          <option value="clothing">Clothing</option>
+          <option value="books">Books</option>
+          <option value="home">Home</option>
+          <option value="sports">Sports</option>
+        </select>
+        <button id="browseButton" type="button">Refresh</button>
+      </div>
+      <div id="status" class="muted">Loading products...</div>
+      <div id="products"></div>
+      <div class="pager">
+        <button id="prevButton" type="button">Previous</button>
+        <button id="nextButton" type="button">Next</button>
+      </div>
+    </div>
+
+    <script>
+      let currentCursor = null;
+      let currentCategory = '';
+      let isLoading = false;
+      const pageCache = new Map();
+
+      function setBusy(isBusy) {
+        const browseButton = document.getElementById('browseButton');
+        const prevButton = document.getElementById('prevButton');
+        const nextButton = document.getElementById('nextButton');
+        browseButton.disabled = isBusy;
+        prevButton.disabled = isBusy;
+        nextButton.disabled = isBusy;
+      }
+
+      function renderItems(items) {
+        const productsEl = document.getElementById('products');
+        if (!items.length) {
+          productsEl.innerHTML = '<div class="muted">No products found.</div>';
+          return;
+        }
+
+        productsEl.innerHTML = items.map(item => `
+          <div class="card">
+            <strong>${item.name}</strong>
+            <div class="meta">Category: ${item.category} • Price: $${Number(item.price).toFixed(2)}</div>
+            <div class="meta">ID: ${item.id}</div>
+          </div>
+        `).join('');
+      }
+
+      async function loadProducts() {
+        currentCategory = document.getElementById('categoryFilter').value;
+        currentCursor = null;
+        await fetchPage();
+      }
+
+      async function nextPage() {
+        if (!currentCursor || isLoading) {
+          return;
+        }
+        await fetchPage(currentCursor);
+      }
+
+      async function prevPage() {
+        if (isLoading) {
+          return;
+        }
+        currentCursor = null;
+        await fetchPage();
+      }
+
+      async function fetchPage(cursor = null) {
+        if (isLoading) {
+          return;
+        }
+
+        const status = document.getElementById('status');
+        const pageKey = `${currentCategory || 'all'}::${cursor || 'root'}`;
+        if (pageCache.has(pageKey)) {
+          const cached = pageCache.get(pageKey);
+          currentCursor = cached.nextCursor;
+          renderItems(cached.items);
+          status.textContent = cached.hasMore ? 'Showing newest products. Use Next to continue.' : 'No more products.';
+          return;
+        }
+
+        isLoading = true;
+        setBusy(true);
+
+        try {
+          const url = new URL('/products', window.location.href);
+          url.searchParams.set('limit', '10');
+          if (cursor) url.searchParams.set('cursor', cursor);
+          if (currentCategory) url.searchParams.set('category', currentCategory);
+
+          const response = await fetch(url.toString(), { headers: { Accept: 'application/json' } });
+          if (!response.ok) {
+            throw new Error(`Request failed with ${response.status}`);
+          }
+
+          const data = await response.json();
+          status.textContent = data.has_more ? 'Showing newest products. Use Next to continue.' : 'No more products.';
+          currentCursor = data.next_cursor;
+          const payload = { items: data.items, nextCursor: data.next_cursor, hasMore: data.has_more };
+          pageCache.set(pageKey, payload);
+          renderItems(data.items);
+        } catch (error) {
+          status.textContent = 'Unable to load products right now.';
+          console.error(error);
+        } finally {
+          isLoading = false;
+          setBusy(false);
+        }
+      }
+
+      document.getElementById('browseButton').addEventListener('click', (event) => {
+        event.preventDefault();
+        loadProducts();
+      });
+      document.getElementById('categoryFilter').addEventListener('change', () => {
+        loadProducts();
+      });
+      document.getElementById('prevButton').addEventListener('click', (event) => {
+        event.preventDefault();
+        prevPage();
+      });
+      document.getElementById('nextButton').addEventListener('click', (event) => {
+        event.preventDefault();
+        nextPage();
+      });
+      window.addEventListener('load', () => {
+        loadProducts();
+      });
+    </script>
+  </body>
+</html>
