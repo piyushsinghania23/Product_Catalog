@@ -13,7 +13,11 @@ app = FastAPI(title="Fast Product Catalog")
 
 
 def get_db_path() -> str:
-    return os.getenv("PRODUCTS_DB_PATH", str(Path(__file__).resolve().parent.parent / "products.db"))
+    if os.getenv("PRODUCTS_DB_PATH"):
+        return os.getenv("PRODUCTS_DB_PATH")
+    if os.getenv("VERCEL"):
+        return "/tmp/products.db"
+    return str(Path(__file__).resolve().parent.parent / "products.db")
 
 
 def get_connection() -> sqlite3.Connection:
@@ -42,6 +46,14 @@ def initialize_database() -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_products_category_updated_id ON products(category, updated_at DESC, id DESC)")
     conn.commit()
     conn.close()
+
+
+def ensure_seeded() -> None:
+    conn = get_connection()
+    count = conn.execute("SELECT COUNT(*) FROM products").fetchone()[0]
+    conn.close()
+    if count == 0:
+        seed_products(250, reset=True)
 
 
 def seed_products(count: int = 200_000, db_path: str | None = None, prefix: str = "product", reset: bool = False) -> None:
@@ -95,6 +107,8 @@ class ProductOut(BaseModel):
 
 @app.get("/")
 def index() -> FileResponse:
+    initialize_database()
+    ensure_seeded()
     return FileResponse(Path(__file__).resolve().parent / "static" / "index.html")
 
 
@@ -109,6 +123,8 @@ def list_products(
     cursor: str | None = None,
     category: str | None = None,
 ) -> dict[str, Any]:
+    initialize_database()
+    ensure_seeded()
     conn = get_connection()
     query = "SELECT id, name, category, price, created_at, updated_at FROM products"
     params: list[Any] = []
